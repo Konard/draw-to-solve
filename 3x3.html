@@ -121,141 +121,233 @@
     <!-- Always-visible description area for the formula/status -->
     <div id="description"></div>
     <!-- Rotate button -->
-    <button id="orientationBtn" onclick="rotateGrid()" disabled>Rotate</button>
+    <button id="orientationBtn" onclick="rotateGrid()">Rotate</button>
   </div>
 
   <script>
-    // Global cumulative rotation (in degrees). Increases by 90° clockwise.
+    const TOL = 1e-6;
     let rotation = 0;
-    const TOL = 1e-6; // Tolerance for comparing slopes
 
-    // Toggle a pixel's active state.
+    // Toggle pixel active state.
     function togglePixel(pixel) {
       pixel.classList.toggle('active');
       updateDescription();
     }
 
-    // Compute the effective coordinates for a pixel given its original coordinate (ox, oy)
-    // and the cumulative rotation (about center (1,1) for a 3x3 grid).
+    // For a 3x3 grid, the center is at (1,1). Compute effective coordinates after rotation.
     function computeEffectiveCoordinates(ox, oy, rotation) {
       const r = rotation % 360;
-      if (r === 0) {
-        return { x: ox, y: oy };
-      } else if (r === 90) {
-        // Clockwise 90° rotation about center (1,1):
-        // new x = 1 + (oy - 1) = oy, new y = 1 - (ox - 1) = 2 - ox
-        return { x: oy, y: 2 - ox };
-      } else if (r === 180) {
-        // 180° rotation:
-        // new x = 1 - (ox - 1) = 2 - ox, new y = 1 - (oy - 1) = 2 - oy
-        return { x: 2 - ox, y: 2 - oy };
-      } else if (r === 270) {
-        // 270° rotation:
-        // new x = 1 - (oy - 1) = 2 - oy, new y = 1 + (ox - 1) = ox
-        return { x: 2 - oy, y: ox };
-      }
+      if (r === 0) return { x: ox, y: oy };
+      else if (r === 90) return { x: oy, y: 2 - ox };
+      else if (r === 180) return { x: 2 - ox, y: 2 - oy };
+      else if (r === 270) return { x: 2 - oy, y: ox };
       return { x: ox, y: oy };
     }
 
-    // Compute horizontal line equation "y = m×x ± b" from active points.
-    // Returns null if there are fewer than 2 points or if the x-values are not unique.
-    function computeHorizontal(points) {
-      if (points.length < 2) return null;
-      const xs = points.map(p => p.x);
-      if (new Set(xs).size !== xs.length) return null;
-      
-      const p0 = points[0], p1 = points[1];
-      let m = (p1.y - p0.y) / (p1.x - p0.x);
-      let b = p0.y - m * p0.x;
-      for (let i = 2; i < points.length; i++) {
-        if (Math.abs(points[i].y - (m * points[i].x + b)) > TOL) return null;
-      }
-      m = parseFloat(m.toFixed(2));
-      b = parseFloat(b.toFixed(2));
-      
-      // Special-case: if m is approximately 1
-      if (Math.abs(m - 1) < TOL) {
-        if (Math.abs(b) < TOL) return "y = x";
-        const sign = b < 0 ? " - " : " + ";
-        return `y = x${sign}${Math.abs(b)}`;
-      }
-      // Special-case: if m is approximately -1
-      if (Math.abs(m + 1) < TOL) {
-        if (Math.abs(b) < TOL) return "y = -x";
-        const sign = b < 0 ? " - " : " + ";
-        return `y = -x${sign}${Math.abs(b)}`;
-      }
-      // If the slope is nearly 0, return y = constant.
-      if (Math.abs(m) < TOL) {
-        return `y = ${b}`;
-      }
-      
-      const sign = b < 0 ? " - " : " + ";
-      return `y = ${m}×x${sign}${Math.abs(b)}`;
+    // --- Helper functions for formatting and simplification ---
+    function formatNumber(n) {
+      let s = n.toFixed(2);
+      s = s.replace(/\.?0+$/, "");
+      return s;
     }
 
-    // Compute vertical line equation "x = m×y ± b" from active points.
-    // Returns null if there are fewer than 2 points or if the y-values are not unique.
-    function computeVertical(points) {
-      if (points.length < 2) return null;
-      const ys = points.map(p => p.y);
-      if (new Set(ys).size !== ys.length) return null;
-      
-      // Swap each point: treat (y, x) as (x, y)
-      const swapped = points.map(p => ({ x: p.y, y: p.x }));
-      const p0 = swapped[0], p1 = swapped[1];
-      let m = (p1.y - p0.y) / (p1.x - p0.x);
-      let b = p0.y - m * p0.x;
-      for (let i = 2; i < swapped.length; i++) {
-        if (Math.abs(swapped[i].y - (m * swapped[i].x + b)) > TOL) return null;
+    // Given coefficient array (highest power first) and the independent variable, returns a simplified polynomial string.
+    function formatPolynomial(coeffs, variable) {
+      let degree = coeffs.length - 1;
+      let result = "";
+      for (let i = 0; i < coeffs.length; i++) {
+        let coef = coeffs[i];
+        let pow = degree - i;
+        if (Math.abs(coef) < TOL) continue;
+        let sign = "";
+        if (result === "") {
+          if (coef < 0) sign = "-";
+        } else {
+          sign = (coef < 0 ? " - " : " + ");
+        }
+        let absCoef = Math.abs(coef);
+        let coefStr = "";
+        if (pow > 0) {
+          if (Math.abs(absCoef - 1) >= TOL) {
+            coefStr = formatNumber(absCoef);
+          }
+          let varPart = variable;
+          if (pow > 1) varPart += "²";
+          result += sign + coefStr + varPart;
+        } else {
+          result += sign + formatNumber(absCoef);
+        }
       }
-      m = parseFloat(m.toFixed(2));
-      b = parseFloat(b.toFixed(2));
-      
-      if (Math.abs(m - 1) < TOL) {
-        if (Math.abs(b) < TOL) return "x = y";
-        const sign = b < 0 ? " - " : " + ";
-        return `x = y${sign}${Math.abs(b)}`;
-      }
-      if (Math.abs(m + 1) < TOL) {
-        if (Math.abs(b) < TOL) return "x = -y";
-        const sign = b < 0 ? " - " : " + ";
-        return `x = -y${sign}${Math.abs(b)}`;
-      }
-      if (Math.abs(m) < TOL) {
-        return `x = ${b}`;
-      }
-      
-      const sign = b < 0 ? " - " : " + ";
-      return `x = ${m}×y${sign}${Math.abs(b)}`;
+      return result === "" ? "0" : result;
     }
 
-    // Update the formula description.
-    // Priority: first try horizontal detection. If that returns null, then try vertical.
+    // Wraps the simplified polynomial with the dependent variable.
+    function simplifyFormula(degree, coeffs, mode) {
+      let poly = formatPolynomial(coeffs, (mode === "horizontal" ? "x" : "y"));
+      return (mode === "horizontal" ? "y = " : "x = ") + poly;
+    }
+
+    // Compute linear coefficients for points (assumes points are sorted by independent variable).
+    function computeLinearCoefficients(points, mode) {
+      let pts = points.slice();
+      if (mode === "horizontal") {
+        pts.sort((p, q) => p.x - q.x);
+        let a = (pts[1].y - pts[0].y) / (pts[1].x - pts[0].x);
+        let b = pts[0].y - a * pts[0].x;
+        return [a, b];
+      } else {
+        pts.sort((p, q) => p.y - q.y);
+        let a = (pts[1].x - pts[0].x) / (pts[1].y - pts[0].y);
+        let b = pts[0].x - a * pts[0].y;
+        return [a, b];
+      }
+    }
+
+    // Compute quadratic coefficients for horizontal mode (y = ax² + bx + c).
+    function computeQuadraticCoefficients(points) {
+      let pts = points.slice().sort((p, q) => p.x - q.x);
+      let x0 = pts[0].x, x1 = pts[1].x, x2 = pts[2].x;
+      let y0 = pts[0].y, y1 = pts[1].y, y2 = pts[2].y;
+      let d1 = x1 - x0, d2 = x2 - x0;
+      let a = (((y2 - y0) / d2) - ((y1 - y0) / d1)) / (x2 - x1);
+      let b = (y1 - y0) / d1 - a * (x0 + x1);
+      let c = y0 - b * x0 - a * x0 * x0;
+      return [a, b, c];
+    }
+
+    // Compute quadratic coefficients for vertical mode (x = ay² + by + c).
+    function computeQuadraticCoefficientsVertical(points) {
+      let pts = points.slice().sort((p, q) => p.y - q.y);
+      let y0 = pts[0].y, y1 = pts[1].y, y2 = pts[2].y;
+      let x0 = pts[0].x, x1 = pts[1].x, x2 = pts[2].x;
+      let d1 = y1 - y0, d2 = y2 - y0;
+      let a = (((x2 - x0) / d2) - ((x1 - x0) / d1)) / (y2 - y1);
+      let b = (x1 - x0) / d1 - a * (y0 + y1);
+      let c = x0 - b * y0 - a * y0 * y0;
+      return [a, b, c];
+    }
+    // --- End helper functions ---
+
+    // Update description.
+    // Only if exactly 3 pixels are active and arranged with 3 distinct x's (horizontal)
+    // or 3 distinct y's (vertical), run the polynomial interpolation brute force.
     function updateDescription() {
       const pixels = document.querySelectorAll('.pixel');
       let activePoints = [];
       pixels.forEach(pixel => {
         if (pixel.classList.contains('active')) {
-          const ox = parseFloat(pixel.dataset.ox);
-          const oy = parseFloat(pixel.dataset.oy);
-          const effective = computeEffectiveCoordinates(ox, oy, rotation);
+          let ox = parseFloat(pixel.getAttribute('data-ox'));
+          let oy = parseFloat(pixel.getAttribute('data-oy'));
+          let effective = computeEffectiveCoordinates(ox, oy, rotation);
           activePoints.push(effective);
         }
       });
       
-      let functionStr = computeHorizontal(activePoints);
-      if (!functionStr) {
-        functionStr = computeVertical(activePoints);
+      if (activePoints.length === 3) {
+        const uniqueX = new Set(activePoints.map(p => p.x));
+        const uniqueY = new Set(activePoints.map(p => p.y));
+        if (uniqueX.size === 3) {
+          // Enable rotate button if valid formula search.
+          document.getElementById('orientationBtn').disabled = false;
+          bruteForceInterpolation(activePoints, "horizontal");
+          return;
+        } else if (uniqueY.size === 3) {
+          document.getElementById('orientationBtn').disabled = false;
+          bruteForceInterpolation(activePoints, "vertical");
+          return;
+        }
       }
       
-      document.getElementById('description').innerText = functionStr ? functionStr : "";
-      
-      const btn = document.getElementById('orientationBtn');
-      btn.disabled = functionStr ? false : true;
+      // For any other case, clear description and disable rotate.
+      document.getElementById('description').innerText = "";
+      document.getElementById('description').style.backgroundColor = "";
+      document.getElementById('orientationBtn').disabled = true;
     }
 
-    // Rotate the grid 90° clockwise (cumulative) and update the visual transform.
+    // Brute-force interpolation: try degree 0, then 1, then 2.
+    // mode: "horizontal" means solving for y = f(x); "vertical" for x = f(y).
+    function bruteForceInterpolation(points, mode) {
+      let candidates = [];
+      if (mode === "horizontal") {
+        // Degree 0 candidate.
+        candidates.push({
+          degree: 0,
+          expr: function(x) { return points[0].y; },
+          toString: function() { return simplifyFormula(0, [points[0].y], "horizontal"); }
+        });
+        // Degree 1 candidate.
+        let linCoeffs = computeLinearCoefficients(points, "horizontal"); // [a, b]
+        candidates.push({
+          degree: 1,
+          expr: function(x) { return linCoeffs[0]*x + linCoeffs[1]; },
+          toString: function() { return simplifyFormula(1, linCoeffs, "horizontal"); }
+        });
+        // Degree 2 candidate.
+        let quadCoeffs = computeQuadraticCoefficients(points); // [a, b, c]
+        candidates.push({
+          degree: 2,
+          expr: function(x) { return quadCoeffs[0]*x*x + quadCoeffs[1]*x + quadCoeffs[2]; },
+          toString: function() { return simplifyFormula(2, quadCoeffs, "horizontal"); }
+        });
+      } else if (mode === "vertical") {
+        candidates.push({
+          degree: 0,
+          expr: function(y) { return points[0].x; },
+          toString: function() { return simplifyFormula(0, [points[0].x], "vertical"); }
+        });
+        let linCoeffs = computeLinearCoefficients(points, "vertical"); // [a, b]
+        candidates.push({
+          degree: 1,
+          expr: function(y) { return linCoeffs[0]*y + linCoeffs[1]; },
+          toString: function() { return simplifyFormula(1, linCoeffs, "vertical"); }
+        });
+        let quadCoeffs = computeQuadraticCoefficientsVertical(points); // [a, b, c]
+        candidates.push({
+          degree: 2,
+          expr: function(y) { return quadCoeffs[0]*y*y + quadCoeffs[1]*y + quadCoeffs[2]; },
+          toString: function() { return simplifyFormula(2, quadCoeffs, "vertical"); }
+        });
+      }
+      
+      // Step-by-step candidate evaluation.
+      let i = 0;
+      function checkNextCandidate() {
+        if (i < candidates.length) {
+          document.getElementById('description').innerText = candidates[i].toString();
+          document.getElementById('description').style.backgroundColor = "gold";
+          let allMatch = true;
+          for (let j = 0; j < points.length; j++) {
+            let inputVal, expected, computed;
+            if (mode === "horizontal") {
+              inputVal = points[j].x;
+              expected = points[j].y;
+              computed = candidates[i].expr(inputVal);
+            } else {
+              inputVal = points[j].y;
+              expected = points[j].x;
+              computed = candidates[i].expr(inputVal);
+            }
+            if (Math.abs(computed - expected) > TOL) {
+              allMatch = false;
+              break;
+            }
+          }
+          if (allMatch) {
+            document.getElementById('description').innerText = candidates[i].toString();
+            document.getElementById('description').style.backgroundColor = "limegreen";
+          } else {
+            i++;
+            requestAnimationFrame(checkNextCandidate);
+          }
+        } else {
+          document.getElementById('description').innerText = "";
+          document.getElementById('description').style.backgroundColor = "";
+        }
+      }
+      requestAnimationFrame(checkNextCandidate);
+    }
+
+    // Rotate the grid 90° clockwise (cumulative) and update description.
     function rotateGrid() {
       const grid = document.getElementById('grid');
       const btn = document.getElementById('orientationBtn');
