@@ -20,7 +20,7 @@
       color: white;
       font-family: Arial, sans-serif;
     }
-    /* The grid container uses a trick to flip rows so that the first cell is bottom left */
+    /* Grid: bottom left is (0,0), top right is (1,1) using flipped y-axis */
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -31,7 +31,6 @@
       aspect-ratio: 1;
       transform: scaleY(-1);
     }
-    /* Each pixel is flipped back and has a smooth color transition */
     .pixel {
       background-color: black;
       border: 1px solid #444;
@@ -39,21 +38,25 @@
       transition: background-color 0.4s ease;
       transform: scaleY(-1);
     }
-    /* Active pixel: drawn pixel color is green */
     .pixel.active {
       background-color: green;
     }
-    /* Description section styling */
+    /* Description styling with extra spacing and math-friendly font */
     #description {
       margin-top: 20px;
+      margin-bottom: 20px;
       font-size: 1.2em;
+      font-family: "Times New Roman", Georgia, serif;
+    }
+    button {
+      margin-bottom: 20px;
+      padding: 10px 20px;
+      font-size: 1em;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <!-- Grid with explicitly defined coordinates:
-       Bottom Left: (0,0), Bottom Right: (1,0),
-       Top Left: (0,1), Top Right: (1,1) -->
   <div class="grid">
     <div class="pixel" data-x="0" data-y="0" onclick="toggleColor(this)"></div>
     <div class="pixel" data-x="1" data-y="0" onclick="toggleColor(this)"></div>
@@ -61,22 +64,32 @@
     <div class="pixel" data-x="1" data-y="1" onclick="toggleColor(this)"></div>
   </div>
   
-  <!-- Description section for the drawn function -->
+  <!-- Function description section -->
   <div id="description"></div>
+  <!-- Button to swap orientation between y = f(x) and x = f(y) -->
+  <button id="orientationBtn" onclick="toggleOrientation()">Swap to vertical mode</button>
   
   <script>
-    // Toggle the active state of a pixel and update the description
+    let verticalMode = false;
+    
     function toggleColor(pixel) {
       pixel.classList.toggle('active');
       updateDescription();
     }
     
-    // Update the description based on active pixels
+    function toggleOrientation() {
+      verticalMode = !verticalMode;
+      updateDescription();
+      document.getElementById('orientationBtn').innerText = verticalMode 
+        ? "Swap to horizontal mode" 
+        : "Swap to vertical mode";
+    }
+    
     function updateDescription() {
       const pixels = document.querySelectorAll('.pixel');
       let activePoints = [];
       
-      // Collect coordinates of active pixels
+      // Gather coordinates from active pixels
       pixels.forEach(pixel => {
         if(pixel.classList.contains('active')) {
           let x = parseFloat(pixel.dataset.x);
@@ -91,41 +104,75 @@
       } else if(activePoints.length < 2) {
         description = 'Not enough points to determine a function.';
       } else {
-        // Use the first two active points to compute a line, then check collinearity
-        const p0 = activePoints[0];
-        const p1 = activePoints[1];
-        if (Math.abs(p1.x - p0.x) < 1e-6) {
-          // Vertical line case
-          description = `x = ${p0.x}`;
-        } else {
-          let m = (p1.y - p0.y) / (p1.x - p0.x);
-          let b = p0.y - m * p0.x;
-          
-          // Verify collinearity for all active points
-          let collinear = true;
-          for(let i = 2; i < activePoints.length; i++){
-            const p = activePoints[i];
-            if(Math.abs(p.y - (m * p.x + b)) > 1e-6){
-              collinear = false;
-              break;
+        // Depending on the mode, swap roles:
+        // Horizontal mode: interpret as y = f(x)
+        // Vertical mode: interpret as x = f(y) (swap x and y)
+        if(!verticalMode) {
+          // Horizontal mode: y = f(x)
+          const p0 = activePoints[0];
+          const p1 = activePoints[1];
+          if (Math.abs(p1.x - p0.x) < 1e-6) {
+            description = 'The active pixels do not define a function of the form y = f(x).';
+          } else {
+            let m = (p1.y - p0.y) / (p1.x - p0.x);
+            let b = p0.y - m * p0.x;
+            
+            let collinear = true;
+            for(let i = 2; i < activePoints.length; i++){
+              const p = activePoints[i];
+              if(Math.abs(p.y - (m * p.x + b)) > 1e-6){
+                collinear = false;
+                break;
+              }
+            }
+            if(!collinear) {
+              description = 'The active pixels do not lie on the graph of a single continuous function.';
+            } else {
+              if(Math.abs(m - 1) < 1e-6 && Math.abs(b) < 1e-6){
+                description = 'y = x';
+              } else if(Math.abs(m) < 1e-6) {
+                description = `y = ${b.toFixed(2)}`;
+              } else {
+                let mStr = m.toFixed(2);
+                let bStr = Math.abs(b).toFixed(2);
+                description = b < 0 
+                  ? `y = ${mStr}x - ${bStr}` 
+                  : `y = ${mStr}x + ${bStr}`;
+              }
             }
           }
-          if(!collinear) {
-            description = 'Active points are not collinear.';
+        } else {
+          // Vertical mode: x = f(y) – swap roles (treat original y as input)
+          const p0 = { x: activePoints[0].y, y: activePoints[0].x };
+          const p1 = { x: activePoints[1].y, y: activePoints[1].x };
+          if (Math.abs(p1.x - p0.x) < 1e-6) {
+            description = 'The active pixels do not define a function of the form x = f(y).';
           } else {
-            // Special case: if m is 1 and intercept is 0, show "x = y" as requested
-            if(Math.abs(m - 1) < 1e-6 && Math.abs(b) < 1e-6){
-              description = 'x = y';
-            } else if(Math.abs(m) < 1e-6) {
-              // Horizontal line
-              description = `y = ${b.toFixed(2)}`;
+            let m = (p1.y - p0.y) / (p1.x - p0.x);
+            let b = p0.y - m * p0.x;
+            
+            let collinear = true;
+            for(let i = 2; i < activePoints.length; i++){
+              const pt = { x: activePoints[i].y, y: activePoints[i].x };
+              if(Math.abs(pt.y - (m * pt.x + b)) > 1e-6){
+                collinear = false;
+                break;
+              }
+            }
+            if(!collinear) {
+              description = 'The active pixels do not lie on the graph of a single continuous function.';
             } else {
-              // Format slope and intercept to 2 decimals
-              let mStr = m.toFixed(2);
-              let bStr = Math.abs(b).toFixed(2);
-              description = b < 0 
-                ? `y = ${mStr}x - ${bStr}` 
-                : `y = ${mStr}x + ${bStr}`;
+              if(Math.abs(m - 1) < 1e-6 && Math.abs(b) < 1e-6){
+                description = 'x = y';
+              } else if(Math.abs(m) < 1e-6) {
+                description = `x = ${b.toFixed(2)}`;
+              } else {
+                let mStr = m.toFixed(2);
+                let bStr = Math.abs(b).toFixed(2);
+                description = b < 0 
+                  ? `x = ${mStr}y - ${bStr}` 
+                  : `x = ${mStr}y + ${bStr}`;
+              }
             }
           }
         }
@@ -133,7 +180,6 @@
       document.getElementById('description').innerText = description;
     }
     
-    // Initialize description on load
     window.onload = updateDescription;
   </script>
 </body>
