@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- Disable zoom on mobile: maximum-scale=1, user-scalable=no -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>3x3 Pixel Editor – Cartesian Coordinates</title>
+  <style>
+    /* Container for grid, description, and button */
+    #container {
+      width: 90vw;
+      max-width: 400px;
+      box-sizing: border-box;
+      margin: 0 auto;
+    }
+    
+    /* Full-screen mobile-first body styling */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: black;
+      height: 100%;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: "Times New Roman", Georgia, serif;
+      color: white;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    
+    /* Grid container: 3x3 with grid-template-areas so that (0,0) is bottom left and (2,2) is top right */
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      grid-template-areas:
+        "tl tm tr"
+        "ml mm mr"
+        "bl bm br";
+      gap: 5px;
+      width: 100%;
+      aspect-ratio: 1;
+      transform: rotate(0deg);
+      transform-origin: center;
+    }
+    
+    /* Each pixel styled with a border */
+    .pixel {
+      background-color: black;
+      border: 1px solid #444;
+      cursor: pointer;
+      transition: background-color 0.4s ease;
+    }
+    .pixel.active {
+      background-color: green;
+    }
+    
+    /* Description area:
+       - Always shown (even if blank), with a gray border matching the pixels.
+       - Full container width.
+       - Height is one-quarter of the container’s width.
+       - Text is centered.
+    */
+    #description {
+      margin: 20px 0;
+      font-size: 1.5em;
+      height: calc(min(90vw, 400px) / 4);
+      border: 1px solid #444;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      padding: 0 10px;
+    }
+    
+    /* Rotate button:
+       - Full container width.
+       - Same height as description.
+       - Green when enabled and gray when disabled.
+       - Larger text.
+    */
+    #orientationBtn {
+      margin-bottom: 20px;
+      font-size: 1.5em;
+      cursor: pointer;
+      width: 100%;
+      height: calc(min(90vw, 400px) / 4);
+      color: white;
+      background-color: green;
+      border: none;
+      box-sizing: border-box;
+    }
+    #orientationBtn:disabled {
+      background-color: gray;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <!-- Grid: uses grid-template-areas to locate (0,0) at bottom left and (2,2) at top right -->
+    <div id="grid">
+      <!-- Top row (y = 2) -->
+      <div class="pixel" data-ox="0" data-oy="2" style="grid-area: tl;" onclick="togglePixel(this)"></div>
+      <div class="pixel" data-ox="1" data-oy="2" style="grid-area: tm;" onclick="togglePixel(this)"></div>
+      <div class="pixel" data-ox="2" data-oy="2" style="grid-area: tr;" onclick="togglePixel(this)"></div>
+      <!-- Middle row (y = 1) -->
+      <div class="pixel" data-ox="0" data-oy="1" style="grid-area: ml;" onclick="togglePixel(this)"></div>
+      <div class="pixel" data-ox="1" data-oy="1" style="grid-area: mm;" onclick="togglePixel(this)"></div>
+      <div class="pixel" data-ox="2" data-oy="1" style="grid-area: mr;" onclick="togglePixel(this)"></div>
+      <!-- Bottom row (y = 0) -->
+      <div class="pixel" data-ox="0" data-oy="0" style="grid-area: bl;" onclick="togglePixel(this)"></div>
+      <div class="pixel" data-ox="1" data-oy="0" style="grid-area: bm;" onclick="togglePixel(this)"></div>
+      <div class="pixel" data-ox="2" data-oy="0" style="grid-area: br;" onclick="togglePixel(this)"></div>
+    </div>
+
+    <!-- Always-visible description area for the formula/status -->
+    <div id="description"></div>
+    <!-- Rotate button -->
+    <button id="orientationBtn" onclick="rotateGrid()" disabled>Rotate</button>
+  </div>
+
+  <script>
+    // Global cumulative rotation (in degrees). Increases by 90° clockwise.
+    let rotation = 0;
+    const TOL = 1e-6; // Tolerance for comparing slopes
+
+    // Toggle a pixel's active state.
+    function togglePixel(pixel) {
+      pixel.classList.toggle('active');
+      updateDescription();
+    }
+
+    // Compute the effective coordinates for a pixel given its original coordinate (ox, oy)
+    // and the cumulative rotation (about center (1,1) for a 3x3 grid).
+    function computeEffectiveCoordinates(ox, oy, rotation) {
+      const r = rotation % 360;
+      if (r === 0) {
+        return { x: ox, y: oy };
+      } else if (r === 90) {
+        // Clockwise 90° rotation about center (1,1):
+        // new x = 1 + (oy - 1) = oy, new y = 1 - (ox - 1) = 2 - ox
+        return { x: oy, y: 2 - ox };
+      } else if (r === 180) {
+        // 180° rotation:
+        // new x = 1 - (ox - 1) = 2 - ox, new y = 1 - (oy - 1) = 2 - oy
+        return { x: 2 - ox, y: 2 - oy };
+      } else if (r === 270) {
+        // 270° rotation:
+        // new x = 1 - (oy - 1) = 2 - oy, new y = 1 + (ox - 1) = ox
+        return { x: 2 - oy, y: ox };
+      }
+      return { x: ox, y: oy };
+    }
+
+    // Compute horizontal line equation "y = m×x ± b" from active points.
+    // Returns null if there are fewer than 2 points or if the x-values are not unique.
+    function computeHorizontal(points) {
+      if (points.length < 2) return null;
+      const xs = points.map(p => p.x);
+      if (new Set(xs).size !== xs.length) return null;
+      
+      const p0 = points[0], p1 = points[1];
+      let m = (p1.y - p0.y) / (p1.x - p0.x);
+      let b = p0.y - m * p0.x;
+      for (let i = 2; i < points.length; i++) {
+        if (Math.abs(points[i].y - (m * points[i].x + b)) > TOL) return null;
+      }
+      m = parseFloat(m.toFixed(2));
+      b = parseFloat(b.toFixed(2));
+      
+      // Special-case: if m is approximately 1
+      if (Math.abs(m - 1) < TOL) {
+        if (Math.abs(b) < TOL) return "y = x";
+        const sign = b < 0 ? " - " : " + ";
+        return `y = x${sign}${Math.abs(b)}`;
+      }
+      // Special-case: if m is approximately -1
+      if (Math.abs(m + 1) < TOL) {
+        if (Math.abs(b) < TOL) return "y = -x";
+        const sign = b < 0 ? " - " : " + ";
+        return `y = -x${sign}${Math.abs(b)}`;
+      }
+      // If the slope is nearly 0, return y = constant.
+      if (Math.abs(m) < TOL) {
+        return `y = ${b}`;
+      }
+      
+      const sign = b < 0 ? " - " : " + ";
+      return `y = ${m}×x${sign}${Math.abs(b)}`;
+    }
+
+    // Compute vertical line equation "x = m×y ± b" from active points.
+    // Returns null if there are fewer than 2 points or if the y-values are not unique.
+    function computeVertical(points) {
+      if (points.length < 2) return null;
+      const ys = points.map(p => p.y);
+      if (new Set(ys).size !== ys.length) return null;
+      
+      // Swap each point: treat (y, x) as (x, y)
+      const swapped = points.map(p => ({ x: p.y, y: p.x }));
+      const p0 = swapped[0], p1 = swapped[1];
+      let m = (p1.y - p0.y) / (p1.x - p0.x);
+      let b = p0.y - m * p0.x;
+      for (let i = 2; i < swapped.length; i++) {
+        if (Math.abs(swapped[i].y - (m * swapped[i].x + b)) > TOL) return null;
+      }
+      m = parseFloat(m.toFixed(2));
+      b = parseFloat(b.toFixed(2));
+      
+      if (Math.abs(m - 1) < TOL) {
+        if (Math.abs(b) < TOL) return "x = y";
+        const sign = b < 0 ? " - " : " + ";
+        return `x = y${sign}${Math.abs(b)}`;
+      }
+      if (Math.abs(m + 1) < TOL) {
+        if (Math.abs(b) < TOL) return "x = -y";
+        const sign = b < 0 ? " - " : " + ";
+        return `x = -y${sign}${Math.abs(b)}`;
+      }
+      if (Math.abs(m) < TOL) {
+        return `x = ${b}`;
+      }
+      
+      const sign = b < 0 ? " - " : " + ";
+      return `x = ${m}×y${sign}${Math.abs(b)}`;
+    }
+
+    // Update the formula description.
+    // Priority: first try horizontal detection. If that returns null, then try vertical.
+    function updateDescription() {
+      const pixels = document.querySelectorAll('.pixel');
+      let activePoints = [];
+      pixels.forEach(pixel => {
+        if (pixel.classList.contains('active')) {
+          const ox = parseFloat(pixel.dataset.ox);
+          const oy = parseFloat(pixel.dataset.oy);
+          const effective = computeEffectiveCoordinates(ox, oy, rotation);
+          activePoints.push(effective);
+        }
+      });
+      
+      let functionStr = computeHorizontal(activePoints);
+      if (!functionStr) {
+        functionStr = computeVertical(activePoints);
+      }
+      
+      document.getElementById('description').innerText = functionStr ? functionStr : "";
+      
+      const btn = document.getElementById('orientationBtn');
+      btn.disabled = functionStr ? false : true;
+    }
+
+    // Rotate the grid 90° clockwise (cumulative) and update the visual transform.
+    function rotateGrid() {
+      const grid = document.getElementById('grid');
+      const btn = document.getElementById('orientationBtn');
+      btn.disabled = true;
+      
+      rotation += 90;
+      grid.style.transition = "transform 0.5s ease";
+      grid.style.transform = `rotate(${rotation}deg)`;
+      
+      grid.addEventListener('transitionend', function onTransitionEnd() {
+        grid.removeEventListener('transitionend', onTransitionEnd);
+        grid.style.transition = "";
+        updateDescription();
+        btn.disabled = false;
+      }, { once: true });
+    }
+    
+    window.onload = updateDescription;
+  </script>
+</body>
+</html>
