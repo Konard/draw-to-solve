@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>2x2 Pixel Editor</title>
+  <title>2x2 Pixel Editor with Function Description</title>
   <style>
-    /* Ensure full screen and mobile-first styling */
+    /* Mobile-first full-screen styling */
     html, body {
       margin: 0;
       padding: 0;
@@ -14,44 +14,127 @@
     }
     body {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      overflow: hidden;
+      color: white;
+      font-family: Arial, sans-serif;
     }
-    /* Grid styling for a responsive square area */
+    /* The grid container uses a trick to flip rows so that the first cell is bottom left */
     .grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 5px;
       width: 90vw;
       max-width: 400px;
       aspect-ratio: 1;
-      gap: 5px;
+      transform: scaleY(-1);
     }
-    /* Pixel styling with smooth transition */
+    /* Each pixel is flipped back and has a smooth color transition */
     .pixel {
       background-color: black;
       border: 1px solid #444;
       cursor: pointer;
       transition: background-color 0.4s ease;
+      transform: scaleY(-1);
     }
-    /* Active pixel style */
+    /* Active pixel: drawn pixel color is green */
     .pixel.active {
       background-color: green;
+    }
+    /* Description section styling */
+    #description {
+      margin-top: 20px;
+      font-size: 1.2em;
     }
   </style>
 </head>
 <body>
+  <!-- Grid with explicitly defined coordinates:
+       Bottom Left: (0,0), Bottom Right: (1,0),
+       Top Left: (0,1), Top Right: (1,1) -->
   <div class="grid">
-    <div class="pixel" onclick="toggleColor(this)"></div>
-    <div class="pixel" onclick="toggleColor(this)"></div>
-    <div class="pixel" onclick="toggleColor(this)"></div>
-    <div class="pixel" onclick="toggleColor(this)"></div>
+    <div class="pixel" data-x="0" data-y="0" onclick="toggleColor(this)"></div>
+    <div class="pixel" data-x="1" data-y="0" onclick="toggleColor(this)"></div>
+    <div class="pixel" data-x="0" data-y="1" onclick="toggleColor(this)"></div>
+    <div class="pixel" data-x="1" data-y="1" onclick="toggleColor(this)"></div>
   </div>
+  
+  <!-- Description section for the drawn function -->
+  <div id="description"></div>
+  
   <script>
+    // Toggle the active state of a pixel and update the description
     function toggleColor(pixel) {
-      // Toggle the "active" class to animate between black and green
       pixel.classList.toggle('active');
+      updateDescription();
     }
+    
+    // Update the description based on active pixels
+    function updateDescription() {
+      const pixels = document.querySelectorAll('.pixel');
+      let activePoints = [];
+      
+      // Collect coordinates of active pixels
+      pixels.forEach(pixel => {
+        if(pixel.classList.contains('active')) {
+          let x = parseFloat(pixel.dataset.x);
+          let y = parseFloat(pixel.dataset.y);
+          activePoints.push({x, y});
+        }
+      });
+      
+      let description = '';
+      if(activePoints.length === 0) {
+        description = 'No pixels active.';
+      } else if(activePoints.length < 2) {
+        description = 'Not enough points to determine a function.';
+      } else {
+        // Use the first two active points to compute a line, then check collinearity
+        const p0 = activePoints[0];
+        const p1 = activePoints[1];
+        if (Math.abs(p1.x - p0.x) < 1e-6) {
+          // Vertical line case
+          description = `x = ${p0.x}`;
+        } else {
+          let m = (p1.y - p0.y) / (p1.x - p0.x);
+          let b = p0.y - m * p0.x;
+          
+          // Verify collinearity for all active points
+          let collinear = true;
+          for(let i = 2; i < activePoints.length; i++){
+            const p = activePoints[i];
+            if(Math.abs(p.y - (m * p.x + b)) > 1e-6){
+              collinear = false;
+              break;
+            }
+          }
+          if(!collinear) {
+            description = 'Active points are not collinear.';
+          } else {
+            // Special case: if m is 1 and intercept is 0, show "x = y" as requested
+            if(Math.abs(m - 1) < 1e-6 && Math.abs(b) < 1e-6){
+              description = 'x = y';
+            } else if(Math.abs(m) < 1e-6) {
+              // Horizontal line
+              description = `y = ${b.toFixed(2)}`;
+            } else {
+              // Format slope and intercept to 2 decimals
+              let mStr = m.toFixed(2);
+              let bStr = Math.abs(b).toFixed(2);
+              description = b < 0 
+                ? `y = ${mStr}x - ${bStr}` 
+                : `y = ${mStr}x + ${bStr}`;
+            }
+          }
+        }
+      }
+      document.getElementById('description').innerText = description;
+    }
+    
+    // Initialize description on load
+    window.onload = updateDescription;
   </script>
 </body>
 </html>
